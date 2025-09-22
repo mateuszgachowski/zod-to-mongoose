@@ -112,6 +112,33 @@ describe("Creating schema", () => {
 		});
 	});
 
+	describe("Arrays", () => {
+		it("should handle arrays of strings", () => {
+			const obj = z.object({
+				items: z.array(z.string()),
+			});
+			const { schema } = createSchema(obj, "array", mongoose.connection);
+			expect(schema.obj.items).toEqual([String]);
+		});
+
+		it("should handle arrays of objects", () => {
+			const obj = z.object({
+				items: z.array(
+					z.object({
+						name: z.string(),
+						value: z.number(),
+					}),
+				),
+			});
+			const { schema } = createSchema(obj, "array", mongoose.connection);
+			expect(schema.obj.items).toBeInstanceOf(Array);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+			const subSchema = (schema.obj.items as any[])[0];
+			expect(subSchema.name).toBe(String);
+			expect(subSchema.value).toBe(Number);
+		});
+	});
+
 	describe("Objects", () => {
 		it("Should be able to handle nested objects", async () => {
 			const obj = z.object({

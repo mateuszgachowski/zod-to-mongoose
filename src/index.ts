@@ -1,5 +1,5 @@
-import type { SchemaDefinition } from "mongoose";
-import type { z, ZodObject, ZodRawShape } from "zod";
+import type { SchemaDefinition, SchemaDefinitionType } from "mongoose";
+import type { z, ZodArray, ZodObject, ZodRawShape, ZodTypeAny } from "zod";
 
 import * as Mongoose from "mongoose";
 
@@ -9,7 +9,7 @@ export function createSchema<T extends ZodRawShape>(
 	zodObject: ZodObject<T>,
 	modelName: string,
 	connection: Mongoose.Connection,
-): { model: Mongoose.Model<z.infer<typeof zodObject>>; schema: Mongoose.Schema; };
+): { model: Mongoose.Model<z.infer<typeof zodObject>>; schema: Mongoose.Schema };
 export function createSchema<T extends ZodRawShape>(zodObject: ZodObject<T>): Mongoose.Schema;
 /**
  * Create a Mongoose schema from a Zod shape
@@ -24,7 +24,7 @@ export function createSchema<T extends ZodRawShape>(
 	zodObject: ZodObject<T>,
 	modelName?: string,
 	connection?: Mongoose.Connection,
-): Mongoose.Schema | { model: Mongoose.Model<z.infer<typeof zodObject>>; schema: Mongoose.Schema; } {
+): Mongoose.Schema | { model: Mongoose.Model<z.infer<typeof zodObject>>; schema: Mongoose.Schema } {
 	const convertedShape: Partial<SchemaDefinition> = {};
 	for (const key in zodObject.shape) {
 		const zodField = zodObject.shape[key];
@@ -44,10 +44,28 @@ export function createSchema<T extends ZodRawShape>(
  * @returns The Mongoose type
  * @throws TypeError If the type is not supported.
  */
-function convertField<T extends ZodRawShape>(type: string, zodField: T[Extract<keyof T, string>]) {
+function convertField<T extends ZodRawShape>(
+	type: string,
+	zodField: T[Extract<keyof T, string>],
+): SchemaDefinitionType<any> {
 	const unwrappedData = unwrapType(zodField);
 	let coreType;
 	switch (unwrappedData.definition._def.typeName) {
+		case "ZodArray": {
+			const arrayType = unwrappedData.definition as ZodArray<ZodTypeAny>;
+			const elementType = arrayType._def.type;
+			if (isZodObject(elementType)) {
+				const shape = elementType.shape;
+				const convertedShape: SchemaDefinition = {};
+				for (const key in shape) {
+					convertedShape[key] = convertField(key, shape[key]);
+				}
+				coreType = [convertedShape];
+			} else {
+				coreType = [convertField(type, elementType)];
+			}
+			break;
+		}
 		case "ZodBoolean":
 			coreType = Boolean;
 			break;
@@ -97,7 +115,7 @@ function isZodObject(definition: SupportedType): definition is ZodObject<ZodRawS
  * @param data The type data to unwrap.
  * @returns The inner type data along with the default if present.
  */
-function unwrapType(data: SupportedType): { defaultValue?: unknown; definition: SupportedType; optional: boolean; } {
+function unwrapType(data: SupportedType): { defaultValue?: unknown; definition: SupportedType; optional: boolean } {
 	let definition = data;
 	const optional = false;
 	let defaultValue = undefined;
